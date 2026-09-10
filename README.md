@@ -33,16 +33,24 @@ curl -H "x-api-key: $READ_API_KEY" "https://locstreamer.vercel.app/api/locations
 
 `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` (IAM user `locstreamer-api`,
 scoped to the bucket), `AWS_REGION`, `S3_BUCKET`, `TOKEN_SECRET` (signs device
-tokens), `READ_API_KEY` (read any phone), `STYTCH_PROJECT_ID` / `STYTCH_SECRET`
-(real SMS; same Stytch project as Manas), and optionally `DEV_PHONE` +
-`DEV_CODE` (one number that signs in with a fixed code and no SMS).
+tokens), `READ_API_KEY` (read any phone), and the SMS provider: by default
+`OTP_BRIDGE_URL` + `OTP_BRIDGE_ANON_KEY` point at the Manas `stytch-auth`
+Supabase edge function, which sends the SMS through Stytch and whose session
+is confirmed against Supabase's `/auth/v1/user` (so the Stytch secret stays in
+Manas); set `STYTCH_PROJECT_ID` / `STYTCH_SECRET` instead to talk to Stytch
+directly. Optional `DEV_PHONE` + `DEV_CODE` allow one number to sign in with a
+fixed code and no SMS.
 
-Deploy: `cd server && vercel deploy --prod`.
+Deploy: pushes to `main` deploy automatically (Vercel Git integration, root
+directory `server`); `cd server && vercel deploy --prod` also works.
 
 ## Ship to TestFlight
 
-`scripts/ios-testflight.sh` archives with manual signing (cert + profile from
-`cd ios && fastlane prep_signing`, using the App Store Connect API key in
-`ios/fastlane/.asc.env`, gitignored) and uploads with `altool`. The App Store
-Connect app record has to exist first (`fastlane bootstrap` registers the
-bundle id; the record itself needs a web session once).
+`scripts/ios-testflight.sh` fetches signing (`fastlane prep_signing`, App
+Store Connect API key in `ios/fastlane/.asc.env`, gitignored), builds a signed
+.ipa with `scripts/ios-build-ipa.sh` (swiftc + actool + codesign, no xcodebuild
+build service, which hangs on this Mac) and uploads with `altool`. The App
+Store Connect app record must exist first: `fastlane bootstrap` registers the
+bundle id; the record itself needs an Apple ID web session once
+(`fastlane spaceauth`, then `fastlane bootstrap_app`). The reusable version of
+this pipeline is the `ios-testflight` skill in `~/.agent-skills`.
