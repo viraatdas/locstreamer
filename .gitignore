@@ -13,3 +13,4 @@ ios/fastlane/.asc.env
 ios/*.xcodeproj
 ios/build/
 ios/fastlane/report.xml
+.vercel
