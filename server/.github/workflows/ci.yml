@@ -1,0 +1,23 @@
+name: ci
+on:
+  push:
+    branches: [main]
+  pull_request:
+jobs:
+  server:
+    runs-on: ubuntu-latest
+    defaults: { run: { working-directory: server } }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: npm, cache-dependency-path: server/package-lock.json }
+      - run: npm ci
+      - run: npm run typecheck
+  ios:
+    runs-on: macos-26
+    steps:
+      - uses: actions/checkout@v4
+      - name: Type-check (Swift 6, iOS simulator SDK)
+        run: |
+          xcrun -sdk iphonesimulator swiftc -typecheck -swift-version 6 \
+            -target arm64-apple-ios17.0-simulator -parse-as-library -module-name LocStreamer ios/App/*.swift

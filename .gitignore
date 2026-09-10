@@ -1,0 +1,15 @@
+.rudder/
+.rudder-workspaces/
+.rudder-worktrees/
+RUDDER.md
+RUDDER_SHARED.md
+.DS_Store
+node_modules/
+.vercel/
+.env
+.env.local
+server/.env*
+ios/fastlane/.asc.env
+ios/*.xcodeproj
+ios/build/
+ios/fastlane/report.xml

@@ -1,0 +1,82 @@
+# fastlane — LocStreamer iOS. Auth is an App Store Connect API key from the
+# environment (ios/fastlane/.asc.env, gitignored): ASC_KEY_ID, ASC_ISSUER_ID,
+# ASC_KEY_PATH, APPLE_TEAM_ID. See scripts/ios-testflight.sh for the archive.
+default_platform(:ios)
+
+APP_ID = ENV["APP_IDENTIFIER"] || "dev.viraat.locstreamer"
+
+def asc_api_key
+  app_store_connect_api_key(
+    key_id: ENV.fetch("ASC_KEY_ID"),
+    issuer_id: ENV.fetch("ASC_ISSUER_ID"),
+    key_filepath: ENV.fetch("ASC_KEY_PATH"),
+    in_house: false,
+  )
+end
+
+def connect!
+  require "spaceship"
+  Spaceship::ConnectAPI.token = Spaceship::ConnectAPI::Token.create(
+    key_id: ENV.fetch("ASC_KEY_ID"), issuer_id: ENV.fetch("ASC_ISSUER_ID"), filepath: ENV.fetch("ASC_KEY_PATH")
+  )
+end
+
+platform :ios do
+  desc "Register the bundle id (idempotent). The app record itself needs a web session once."
+  lane :bootstrap do
+    connect!
+    if Spaceship::ConnectAPI::BundleId.all(filter: { identifier: APP_ID }).any? { |b| b.identifier == APP_ID }
+      UI.message("bundle id #{APP_ID} exists")
+    else
+      Spaceship::ConnectAPI::BundleId.create(name: "LocStreamer", identifier: APP_ID, platform: "IOS")
+      UI.success("created bundle id #{APP_ID}")
+    end
+    if (app = Spaceship::ConnectAPI::App.find(APP_ID))
+      UI.success("app record exists: #{app.name} (#{app.id})")
+    else
+      UI.important("no App Store Connect app record for #{APP_ID} yet — create it on appstoreconnect.apple.com or run `fastlane bootstrap_app` after `fastlane spaceauth`.")
+    end
+  end
+
+  desc "Create the App Store Connect app record via an Apple ID web session (fastlane spaceauth first)."
+  lane :bootstrap_app do
+    require "spaceship"
+    Spaceship::ConnectAPI.login(ENV["FASTLANE_APPLE_ID"] || "viraat.laldas@gmail.com", nil, use_portal: false, use_tunes: true)
+    if (app = Spaceship::ConnectAPI::App.find(APP_ID))
+      UI.success("app record exists: #{app.name} (#{app.id})")
+    else
+      app = Spaceship::ConnectAPI::App.create(
+        name: ENV["APP_NAME"] || "LocStreamer", version_string: "1.0", sku: "locstreamer-ios-viraat",
+        primary_locale: "en-US", bundle_id: APP_ID, platforms: ["IOS"], company_name: nil
+      )
+      UI.success("created app record: #{app.name} (#{app.id})")
+    end
+  end
+
+  desc "Fetch the Distribution cert + App Store profile (manual signing for Release)."
+  lane :prep_signing do
+    key = asc_api_key
+    cert(api_key: key, generate_apple_certs: true, output_path: "build/certs")
+    sigh(api_key: key, app_identifier: APP_ID, platform: "ios", force: true, output_path: "build/profiles")
+  end
+
+  desc "Processing + compliance state of the latest TestFlight build."
+  lane :tf_status do
+    connect!
+    app = Spaceship::ConnectAPI::App.find(APP_ID)
+    UI.user_error!("App #{APP_ID} not found") unless app
+    UI.message("App: #{app.name} (#{app.id})")
+    build = Spaceship::ConnectAPI::Build.all(app_id: app.id, sort: "-uploadedDate", limit: 1).first
+    if build
+      UI.success("Latest build #{build.app_version} (#{build.version}) state=#{build.processing_state}")
+      begin
+        build.update(attributes: { usesNonExemptEncryption: false })
+        UI.success("Export compliance cleared")
+      rescue => e
+        UI.message("Compliance note: #{e.message}")
+      end
+    else
+      UI.important("No build on App Store Connect yet")
+    end
+  end
+end
