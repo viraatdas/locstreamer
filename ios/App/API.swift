@@ -7,9 +7,14 @@ struct API: Sendable {
 
     enum APIError: LocalizedError {
         case server(String)
+        /// A non-2xx HTTP response, carrying the status so callers can decide
+        /// whether to retry (5xx, network) or drop the request (4xx).
+        case http(status: Int, message: String)
+
         var errorDescription: String? {
             switch self {
             case .server(let message): message
+            case .http(_, let message): message
             }
         }
     }
@@ -54,7 +59,7 @@ struct API: Sendable {
         let object = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] ?? [:]
         if let http = response as? HTTPURLResponse, !(200..<300).contains(http.statusCode) {
             let message = (object["error"] as? String) ?? "Request failed (\(http.statusCode))."
-            throw APIError.server(message)
+            throw APIError.http(status: http.statusCode, message: message)
         }
         return object
     }

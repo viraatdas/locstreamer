@@ -56,6 +56,13 @@ final class LocationStreamer: NSObject, CLLocationManagerDelegate {
 
     var hasAlwaysAuthorization: Bool { authorization == .authorizedAlways }
 
+    /// Location is already granted at some level — safe to resume recording
+    /// without prompting. Used to distinguish reboot-before-unlock (authorized)
+    /// from a fresh install (not determined).
+    var isAuthorized: Bool {
+        authorization == .authorizedAlways || authorization == .authorizedWhenInUse
+    }
+
     /// Begins recording location — independent of having a session. Called on
     /// every launch, including the silent SLC relaunches iOS performs after the
     /// app is killed. If the device rebooted and hasn't been unlocked yet, the
@@ -172,6 +179,15 @@ final class LocationStreamer: NSObject, CLLocationManagerDelegate {
             pending = buffer.count
             lastUpload = Date()
             lastError = nil
+            persistBuffer()
+        } catch let API.APIError.http(status, message) where status != 401 && (400..<500).contains(status) {
+            // The server rejected this batch for a reason retrying won't fix
+            // (e.g. every point out of range). Drop it so it can't block the
+            // queue forever; keep going with the rest. 401 is excluded: that's
+            // an expired session, which a re-sign-in resolves.
+            buffer.removeFirst(batch.count)
+            pending = buffer.count
+            lastError = "Dropped \(batch.count) unsendable point(s): \(message)"
             persistBuffer()
         } catch {
             lastError = error.localizedDescription
