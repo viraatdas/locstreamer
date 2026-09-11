@@ -14,6 +14,14 @@ EXPORT_DIR="$BUILD_DIR/export"
 source "$IOS_DIR/fastlane/.asc.env"
 : "${ASC_KEY_ID:?fill ios/fastlane/.asc.env}" "${ASC_ISSUER_ID:?}" "${ASC_KEY_PATH:?}" "${APPLE_TEAM_ID:?}"
 
+SKILL=~/.agent-skills/ios-testflight/scripts
+export APP_NAME=LocStreamer
+echo "==> App Store Connect: bundle id + app record"
+ruby "$SKILL/asc.rb" bootstrap
+if ! ruby "$SKILL/asc.rb" app; then
+  echo "error: no App Store Connect web session. Run once in your terminal:  fastlane spaceauth -u viraat.laldas@gmail.com" >&2
+  exit 3
+fi
 echo "==> Generating Xcode project"
 (cd "$IOS_DIR" && xcodegen generate)
 echo "==> Fetching Distribution cert + App Store profile"
@@ -27,4 +35,11 @@ echo "==> Building signed .ipa"
 
 echo "==> Uploading to TestFlight"
 xcrun altool --upload-app --type ios --file "$BUILD_DIR/LocStreamer.ipa" --apiKey "$ASC_KEY_ID" --apiIssuer "$ASC_ISSUER_ID"
-echo "==> Uploaded. Check processing with: (cd ios && fastlane tf_status)"
+echo "==> Uploaded. Waiting for App Store Connect to process the build"
+for i in $(seq 1 40); do
+  state=$(ruby "$SKILL/asc.rb" status 2>/dev/null | sed -n 's/.*state=//p' | tail -1)
+  echo "    $(date +%H:%M:%S) ${state:-not visible yet}"
+  case "$state" in VALID|INVALID|FAILED) break;; esac
+  sleep 30
+done
+ruby "$SKILL/asc.rb" status
