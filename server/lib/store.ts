@@ -32,15 +32,23 @@ function phoneKey(phone: string): string {
   return phone.replace(/[^0-9]/g, "");
 }
 
+// Bounds for a plausible epoch-ms timestamp: 2000-01-01 to a day in the
+// future. Anything outside (e.g. 1e300) would make new Date(ts).toISOString()
+// throw a RangeError downstream, so such points are dropped at the door.
+const TS_MIN = 946_684_800_000;
+const tsMax = () => Date.now() + 86_400_000;
+
 export function parsePoints(raw: unknown): Point[] {
   if (!Array.isArray(raw)) return [];
   const out: Point[] = [];
+  const upper = tsMax();
   for (const item of raw) {
     if (!item || typeof item !== "object") continue;
     const p = item as Record<string, unknown>;
     const ts = Number(p.ts), lat = Number(p.lat), lon = Number(p.lon);
     if (!Number.isFinite(ts) || !Number.isFinite(lat) || !Number.isFinite(lon)) continue;
     if (Math.abs(lat) > 90 || Math.abs(lon) > 180) continue;
+    if (ts < TS_MIN || ts > upper) continue;
     const point: Point = { ts: Math.round(ts), lat, lon };
     if (Number.isFinite(Number(p.acc))) point.acc = Number(p.acc);
     if (Number.isFinite(Number(p.spd))) point.spd = Number(p.spd);
@@ -83,9 +91,44 @@ function* daysBetween(from: string, to: string): Generator<string> {
   }
 }
 
-/** Every point for `phone` between two UTC dates (inclusive), oldest first. */
+/** Fetch one object and return its parsed points, skipping corrupt lines. */
+async function readObject(key: string): Promise<Point[]> {
+  const got = await client.send(new GetObjectCommand({ Bucket: bucket(), Key: key }));
+  const text = (await got.Body?.transformToString()) ?? "";
+  const out: Point[] = [];
+  for (const line of text.split("\n")) {
+    if (!line.trim()) continue;
+    try {
+      out.push(JSON.parse(line) as Point);
+    } catch {
+      /* skip a corrupt line rather than fail the whole read */
+    }
+  }
+  return out;
+}
+
+/** Run `worker` over `items` with at most `limit` in flight at once. */
+async function mapLimit<T, R>(items: T[], limit: number, worker: (item: T) => Promise<R>): Promise<R[]> {
+  const results: R[] = new Array(items.length);
+  let next = 0;
+  async function run(): Promise<void> {
+    while (true) {
+      const i = next++;
+      if (i >= items.length) return;
+      results[i] = await worker(items[i]);
+    }
+  }
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, run));
+  return results;
+}
+
+/**
+ * Every point for `phone` between two UTC dates (inclusive), oldest first.
+ * A busy day writes ~1 object/minute, so objects are fetched with bounded
+ * concurrency — a sequential GET per object blew past the function timeout.
+ */
 export async function readPoints(phone: string, from: string, to: string): Promise<Point[]> {
-  const points: Point[] = [];
+  const keys: string[] = [];
   for (const day of daysBetween(from, to)) {
     const prefix = `points/${phoneKey(phone)}/${day}/`;
     let token: string | undefined;
@@ -94,21 +137,13 @@ export async function readPoints(phone: string, from: string, to: string): Promi
         new ListObjectsV2Command({ Bucket: bucket(), Prefix: prefix, ContinuationToken: token }),
       );
       for (const object of listed.Contents ?? []) {
-        if (!object.Key) continue;
-        const got = await client.send(new GetObjectCommand({ Bucket: bucket(), Key: object.Key }));
-        const text = (await got.Body?.transformToString()) ?? "";
-        for (const line of text.split("\n")) {
-          if (!line.trim()) continue;
-          try {
-            points.push(JSON.parse(line) as Point);
-          } catch {
-            /* skip a corrupt line rather than fail the whole read */
-          }
-        }
+        if (object.Key) keys.push(object.Key);
       }
       token = listed.IsTruncated ? listed.NextContinuationToken : undefined;
     } while (token);
   }
+  const chunks = await mapLimit(keys, 24, readObject);
+  const points = chunks.flat();
   points.sort((a, b) => a.ts - b.ts);
   return points;
 }

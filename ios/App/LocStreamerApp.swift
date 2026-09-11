@@ -22,7 +22,11 @@ final class AppModel {
 
     init() {
         session = Session.restore()
-        if let session { streamer.start(session: session) }
+        // Always start recording, even if the session couldn't be read yet
+        // (reboot before first unlock). The streamer retries Session.restore()
+        // in flush() and uploads once a session is available.
+        streamer.startRecording()
+        if let session { streamer.attach(session: session) }
         #if DEBUG
         // Scripted sign-in for simulator verification (scripts/ios-run-sim.sh):
         //   -probePhone +15555550100 -probeCode 123456

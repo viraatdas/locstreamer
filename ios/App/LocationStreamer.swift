@@ -56,8 +56,13 @@ final class LocationStreamer: NSObject, CLLocationManagerDelegate {
 
     var hasAlwaysAuthorization: Bool { authorization == .authorizedAlways }
 
-    func start(session: Session) {
-        self.session = session
+    /// Begins recording location — independent of having a session. Called on
+    /// every launch, including the silent SLC relaunches iOS performs after the
+    /// app is killed. If the device rebooted and hasn't been unlocked yet, the
+    /// keychain read for the session fails, but recording must still start and
+    /// SLC monitoring must be re-registered in this process; `flush()` retries
+    /// `Session.restore()` and uploads the buffered points once unlock happens.
+    func startRecording() {
         if authorization == .notDetermined {
             manager.requestWhenInUseAuthorization()
         } else if authorization == .authorizedWhenInUse {
@@ -77,6 +82,20 @@ final class LocationStreamer: NSObject, CLLocationManagerDelegate {
         Task { await flush() }
     }
 
+    /// Supplies the session for uploads. Recording may already be running.
+    func attach(session: Session) {
+        self.session = session
+        Task { await flush() }
+    }
+
+    func start(session: Session) {
+        self.session = session
+        startRecording()
+    }
+
+    /// Full stop AND wipe: used on sign-out. The pending buffer belongs to the
+    /// signed-out phone; leaving it on disk would upload it under the next
+    /// account's token, so it is cleared here.
     func stop() {
         isRunning = false
         manager.stopUpdatingLocation()
@@ -84,6 +103,12 @@ final class LocationStreamer: NSObject, CLLocationManagerDelegate {
         uploadTimer?.invalidate(); uploadTimer = nil
         heartbeatTimer?.invalidate(); heartbeatTimer = nil
         session = nil
+        lastLocation = nil
+        buffer.removeAll()
+        recent.removeAll()
+        pending = 0
+        totalRecorded = 0
+        try? FileManager.default.removeItem(at: Self.bufferURL)
     }
 
     func requestAlways() {
@@ -134,6 +159,9 @@ final class LocationStreamer: NSObject, CLLocationManagerDelegate {
     }
 
     func flush() async {
+        // Recover a session that couldn't be read at launch (device rebooted,
+        // keychain still locked). Once it restores, buffered points upload.
+        if session == nil { session = Session.restore() }
         guard let session, !uploading, !buffer.isEmpty else { return }
         uploading = true
         defer { uploading = false }

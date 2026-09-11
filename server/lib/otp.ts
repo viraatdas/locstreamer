@@ -34,6 +34,14 @@ function bridgeConfigured(): boolean {
   return !!process.env.OTP_BRIDGE_URL && !!process.env.OTP_BRIDGE_ANON_KEY;
 }
 
+async function parseJson(r: Response): Promise<Record<string, unknown>> {
+  try {
+    return (await r.json()) as Record<string, unknown>;
+  } catch {
+    return {}; // upstream returned non-JSON (e.g. a 502 HTML page)
+  }
+}
+
 function normalize(phone: string): string {
   return `+${phone.replace(/[^0-9]/g, "")}`;
 }
@@ -64,7 +72,7 @@ async function bridgeSend(phone: string): Promise<Send> {
     headers: bridgeHeaders(),
     body: JSON.stringify({ action: "send", phone }),
   });
-  const d = (await r.json()) as { method_id?: string; error?: string };
+  const d = (await parseJson(r)) as { method_id?: string; error?: string };
   if (!r.ok || !d.method_id) return { error: d.error ?? "Couldn't send the code." };
   return { methodId: d.method_id };
 }
@@ -75,7 +83,7 @@ async function bridgeVerify(phone: string, methodId: string, code: string): Prom
     headers: bridgeHeaders(),
     body: JSON.stringify({ action: "verify", phone, method_id: methodId, code }),
   });
-  const d = (await r.json()) as { session?: { access_token?: string }; error?: string };
+  const d = (await parseJson(r)) as { session?: { access_token?: string }; error?: string };
   const accessToken = d.session?.access_token;
   if (!r.ok || !accessToken) return { error: d.error ?? "That code didn't match." };
 
@@ -85,7 +93,7 @@ async function bridgeVerify(phone: string, methodId: string, code: string): Prom
   const u = await fetch(authURL, {
     headers: { apikey: process.env.OTP_BRIDGE_ANON_KEY!, Authorization: `Bearer ${accessToken}` },
   });
-  const user = (await u.json()) as { phone?: string; phone_confirmed_at?: string };
+  const user = (await parseJson(u)) as { phone?: string; phone_confirmed_at?: string };
   if (!u.ok || !user.phone || !user.phone_confirmed_at) return { error: "The session could not be confirmed." };
   return { phone: normalize(user.phone) };
 }
@@ -104,7 +112,7 @@ async function stytchSend(phone: string): Promise<Send> {
     headers: { Authorization: stytchAuth(), "Content-Type": "application/json" },
     body: JSON.stringify({ phone_number: phone, expiration_minutes: 10 }),
   });
-  const d = (await r.json()) as { phone_id?: string; error_message?: string };
+  const d = (await parseJson(r)) as { phone_id?: string; error_message?: string };
   if (!r.ok) return { error: d.error_message ?? "Couldn't send the code." };
   return { methodId: d.phone_id };
 }
@@ -115,7 +123,7 @@ async function stytchVerify(methodId: string, code: string): Promise<Verify> {
     headers: { Authorization: stytchAuth(), "Content-Type": "application/json" },
     body: JSON.stringify({ method_id: methodId, code, session_duration_minutes: 5 }),
   });
-  const d = (await r.json()) as {
+  const d = (await parseJson(r)) as {
     error_message?: string;
     user?: { phone_numbers?: Array<{ phone_id?: string; phone_number?: string }> };
   };
