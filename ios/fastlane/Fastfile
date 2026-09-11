@@ -41,15 +41,17 @@ platform :ios do
   desc "Create the App Store Connect app record via an Apple ID web session (fastlane spaceauth first)."
   lane :bootstrap_app do
     require "spaceship"
+    ENV["FASTLANE_ITC_TEAM_ID"] ||= "118673131"
     Spaceship::ConnectAPI.login(ENV["FASTLANE_APPLE_ID"] || "viraat.laldas@gmail.com", nil, use_portal: false, use_tunes: true)
+    Spaceship::ConnectAPI.client.select_team(tunes_team_id: "118673131") rescue nil
     if (app = Spaceship::ConnectAPI::App.find(APP_ID))
       UI.success("app record exists: #{app.name} (#{app.id})")
     else
-      app = Spaceship::ConnectAPI::App.create(
+      Spaceship::ConnectAPI::App.create(
         name: ENV["APP_NAME"] || "LocStreamer", version_string: "1.0", sku: "locstreamer-ios-viraat",
         primary_locale: "en-US", bundle_id: APP_ID, platforms: ["IOS"], company_name: nil
       )
-      UI.success("created app record: #{app.name} (#{app.id})")
+      UI.success("created app record for #{APP_ID}")
     end
   end
 
@@ -80,3 +82,4 @@ platform :ios do
     end
   end
 end
+
