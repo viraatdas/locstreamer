@@ -3,7 +3,13 @@
  *   points/<phone digits>/<YYYY-MM-DD>/<first ts ms>-<random>.jsonl
  * Reads list the day prefixes in range and concatenate. No database.
  */
-import { GetObjectCommand, ListObjectsV2Command, PutObjectCommand, S3Client } from "@aws-sdk/client-s3";
+import {
+  DeleteObjectsCommand,
+  GetObjectCommand,
+  ListObjectsV2Command,
+  PutObjectCommand,
+  S3Client,
+} from "@aws-sdk/client-s3";
 
 export interface Point {
   /** Unix epoch milliseconds. */
@@ -145,5 +151,40 @@ export async function readPoints(phone: string, from: string, to: string): Promi
   const chunks = await mapLimit(keys, 24, readObject);
   const points = chunks.flat();
   points.sort((a, b) => a.ts - b.ts);
-  return points;
+  // De-duplicate by timestamp: a lost upload response makes the client re-send
+  // a batch, so the same fix can land in two objects. Two genuinely distinct
+  // fixes at the same millisecond are not meaningful here, so one-per-ts is the
+  // right collapse.
+  const deduped: Point[] = [];
+  let lastTs: number | undefined;
+  for (const p of points) {
+    if (p.ts !== lastTs) {
+      deduped.push(p);
+      lastTs = p.ts;
+    }
+  }
+  return deduped;
+}
+
+/**
+ * Permanently deletes every location object for `phone` (an account deletion,
+ * as Apple's guideline 5.1.1(v) requires). Returns the number of objects
+ * removed. S3 deletes up to 1,000 keys per request.
+ */
+export async function deleteAllPoints(phone: string): Promise<number> {
+  const prefix = `points/${phoneKey(phone)}/`;
+  let deleted = 0;
+  let token: string | undefined;
+  do {
+    const listed = await client.send(
+      new ListObjectsV2Command({ Bucket: bucket(), Prefix: prefix, ContinuationToken: token }),
+    );
+    const objects = (listed.Contents ?? []).filter((o) => o.Key).map((o) => ({ Key: o.Key! }));
+    if (objects.length > 0) {
+      await client.send(new DeleteObjectsCommand({ Bucket: bucket(), Delete: { Objects: objects } }));
+      deleted += objects.length;
+    }
+    token = listed.IsTruncated ? listed.NextContinuationToken : undefined;
+  } while (token);
+  return deleted;
 }

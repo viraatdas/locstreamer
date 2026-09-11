@@ -48,6 +48,21 @@ struct API: Sendable {
         _ = try await post("api/locations", json: ["points": payload], bearer: token)
     }
 
+    /// Permanently deletes all of the signed-in phone's location history on the
+    /// server. Used by in-app account deletion.
+    func deleteAllData(token: String) async throws {
+        var request = URLRequest(url: baseURL.appendingPathComponent("api/locations"))
+        request.httpMethod = "DELETE"
+        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        request.timeoutInterval = 30
+        let (data, response) = try await URLSession.shared.data(for: request)
+        if let http = response as? HTTPURLResponse, !(200..<300).contains(http.statusCode) {
+            let object = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] ?? [:]
+            let message = (object["error"] as? String) ?? "Delete failed (\(http.statusCode))."
+            throw APIError.http(status: http.statusCode, message: message)
+        }
+    }
+
     private func post(_ path: String, json: [String: Any], bearer: String? = nil) async throws -> [String: Any] {
         var request = URLRequest(url: baseURL.appendingPathComponent(path))
         request.httpMethod = "POST"

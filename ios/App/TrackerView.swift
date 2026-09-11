@@ -5,6 +5,11 @@ struct TrackerView: View {
     let session: Session
     let streamer: LocationStreamer
     let signOut: () -> Void
+    let deleteAccount: () async throws -> Void
+
+    @State private var confirmingDelete = false
+    @State private var deleting = false
+    @State private var deleteError: String?
 
     var body: some View {
         NavigationStack {
@@ -48,12 +53,46 @@ struct TrackerView: View {
                         }
                     }
                 }
+
+                Section {
+                    Button(role: .destructive) {
+                        confirmingDelete = true
+                    } label: {
+                        if deleting {
+                            ProgressView()
+                        } else {
+                            Text("Delete my data")
+                        }
+                    }
+                    .disabled(deleting)
+                    if let deleteError {
+                        Text(deleteError).font(.footnote).foregroundStyle(.red)
+                    }
+                } footer: {
+                    Text("Permanently deletes all of your recorded locations from the server and signs you out.")
+                }
             }
             .navigationTitle("LocStreamer")
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
                     Button("Sign out", role: .destructive, action: signOut)
                 }
+            }
+            .confirmationDialog(
+                "Delete all your location data? This cannot be undone.",
+                isPresented: $confirmingDelete,
+                titleVisibility: .visible
+            ) {
+                Button("Delete everything", role: .destructive) {
+                    deleting = true
+                    deleteError = nil
+                    Task {
+                        defer { deleting = false }
+                        do { try await deleteAccount() }
+                        catch { deleteError = error.localizedDescription }
+                    }
+                }
+                Button("Cancel", role: .cancel) {}
             }
         }
     }

@@ -1,13 +1,22 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 import { phoneFromBearer } from "../../lib/auth.js";
 import { badRequest, bodyOf, json } from "../../lib/http.js";
-import { appendPoints, parsePoints } from "../../lib/store.js";
+import { appendPoints, deleteAllPoints, parsePoints } from "../../lib/store.js";
 
-/** POST (Bearer device token) { points: [{ts, lat, lon, acc?, spd?}] } -> { stored, keys } */
+/**
+ * POST   (Bearer) { points: [{ts, lat, lon, acc?, spd?}] } -> { stored, keys }
+ * DELETE (Bearer) -> { deleted }   — removes ALL of the caller's location
+ *   history (in-app account deletion, Apple guideline 5.1.1(v)).
+ */
 export default async function handler(req: VercelRequest, res: VercelResponse) {
-  if (req.method !== "POST") return json(res, 405, { error: "POST only" });
+  if (req.method !== "POST" && req.method !== "DELETE") return json(res, 405, { error: "POST or DELETE only" });
   const phone = await phoneFromBearer(req);
   if (!phone) return json(res, 401, { error: "Sign in again." });
+
+  if (req.method === "DELETE") {
+    const deleted = await deleteAllPoints(phone);
+    return json(res, 200, { deleted });
+  }
   const raw = bodyOf(req).points;
   // A missing/non-array `points` is a malformed request (400). A well-formed
   // array is accepted even if nothing survives validation (e.g. every ts is

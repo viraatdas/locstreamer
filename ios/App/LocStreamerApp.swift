@@ -65,6 +65,15 @@ final class AppModel {
         Session.clear()
         session = nil
     }
+
+    /// Deletes all server-side location history for the signed-in phone, then
+    /// signs out and wipes the local buffer. Apple guideline 5.1.1(v).
+    func deleteAccount() async throws {
+        if let session {
+            try await API().deleteAllData(token: session.token)
+        }
+        signOut()
+    }
 }
 
 struct RootView: View {
@@ -72,7 +81,12 @@ struct RootView: View {
 
     var body: some View {
         if let session = model.session {
-            TrackerView(session: session, streamer: model.streamer, signOut: model.signOut)
+            TrackerView(
+                session: session,
+                streamer: model.streamer,
+                signOut: model.signOut,
+                deleteAccount: model.deleteAccount
+            )
         } else {
             SignInView { model.signedIn($0) }
         }
