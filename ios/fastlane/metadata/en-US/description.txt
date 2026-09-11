@@ -1,0 +1,17 @@
+LocStreamer quietly records where you go during the day and keeps it as a
+simple, private location history you can read back any time.
+
+Sign in with your phone number, allow location access, and that is it. The app
+records your position continuously in the background and streams it to your own
+private storage. There is no map to fiddle with and no social feed: just a
+clean, honest list of where you have been, newest first, with the time of each
+fix.
+
+Your history is keyed to your phone number and is yours alone. Whenever you
+want, tap Delete my data to permanently erase everything from the server.
+
+Features
+- Continuous background location recording
+- Phone-number sign-in with a one-time SMS code
+- A plain, readable list of your recorded points
+- One-tap permanent deletion of all your data

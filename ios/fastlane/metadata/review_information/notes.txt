@@ -1,0 +1,8 @@
+Sign-in is by phone number and a one-time SMS code. Use the demo account:
+phone +1 555 555 0100, code 123456 (this number accepts the fixed code above,
+so no live SMS is needed to sign in).
+
+After signing in, allow location access "Always". The app records your location
+continuously in the background and shows the recorded points as a list. To test
+data deletion (required by guideline 5.1.1(v)), tap "Delete my data" at the
+bottom of the list; it erases all stored data and signs out.

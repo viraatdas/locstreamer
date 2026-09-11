@@ -13,6 +13,17 @@ For _fastlane_ installation instructions, see [Installing _fastlane_](https://do
 
 # Available Actions
 
+### push_listing
+
+```sh
+[bundle exec] fastlane push_listing
+```
+
+Upload App Store listing metadata + screenshots (no submit; App Privacy is web-UI only).
+
+----
+
+
 ## iOS
 
 ### ios bootstrap

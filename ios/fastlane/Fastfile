@@ -83,3 +83,23 @@ platform :ios do
   end
 end
 
+
+  desc "Upload App Store listing metadata + screenshots (no submit; App Privacy is web-UI only)."
+  lane :push_listing do
+    ENV["FASTLANE_ITC_TEAM_ID"] ||= "118673131"
+    deliver(
+      api_key_path: nil,
+      username: ENV["FASTLANE_APPLE_ID"] || "viraat.laldas@gmail.com",
+      app_identifier: APP_ID,
+      app_version: "1.0",
+      metadata_path: "./fastlane/metadata",
+      screenshots_path: "./fastlane/screenshots",
+      skip_binary_upload: true,
+      skip_app_version_update: false,
+      overwrite_screenshots: true,
+      submit_for_review: false,
+      run_precheck_before_submit: false,
+      automatic_release: true,
+      force: true,
+    )
+  end
