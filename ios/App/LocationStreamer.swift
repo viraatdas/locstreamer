@@ -180,11 +180,14 @@ final class LocationStreamer: NSObject, CLLocationManagerDelegate {
             lastUpload = Date()
             lastError = nil
             persistBuffer()
-        } catch let API.APIError.http(status, message) where status != 401 && (400..<500).contains(status) {
+        } catch let API.APIError.http(status, message)
+            where (400..<500).contains(status) && ![401, 408, 429].contains(status) {
             // The server rejected this batch for a reason retrying won't fix
             // (e.g. every point out of range). Drop it so it can't block the
-            // queue forever; keep going with the rest. 401 is excluded: that's
-            // an expired session, which a re-sign-in resolves.
+            // queue forever; keep going with the rest. Retryable statuses are
+            // excluded and left to retry: 401 (expired session, fixed by a
+            // re-sign-in), 408 (timeout), and 429 (throttling, which Vercel can
+            // emit under load).
             buffer.removeFirst(batch.count)
             pending = buffer.count
             lastError = "Dropped \(batch.count) unsendable point(s): \(message)"
