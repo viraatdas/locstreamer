@@ -23,6 +23,25 @@ final class AppModel {
     init() {
         session = Session.restore()
         if let session { streamer.start(session: session) }
+        #if DEBUG
+        // Scripted sign-in for simulator verification (scripts/ios-run-sim.sh):
+        //   -probePhone +15555550100 -probeCode 123456
+        // Debug builds only; the App Store binary has no such path.
+        if session == nil {
+            let defaults = UserDefaults.standard
+            if let phone = defaults.string(forKey: "probePhone"), let code = defaults.string(forKey: "probeCode") {
+                Task { @MainActor in
+                    let api = API()
+                    do {
+                        let methodID = try await api.requestCode(phone: phone)
+                        signedIn(try await api.verifyCode(phone: phone, methodID: methodID, code: code))
+                    } catch {
+                        print("probe sign-in failed: \(error.localizedDescription)")
+                    }
+                }
+            }
+        }
+        #endif
     }
 
     func signedIn(_ session: Session) {

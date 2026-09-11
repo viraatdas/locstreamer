@@ -106,6 +106,8 @@ final class LocationStreamer: NSObject, CLLocationManagerDelegate {
             for location in locations where location.horizontalAccuracy >= 0 && location.horizontalAccuracy < 500 {
                 self.record(LocationPoint(location))
                 self.lastLocation = location
+                // A fix arriving clears the transient "location unknown" Core Location reports at startup.
+                if self.lastUpload == nil || self.pending > 0 { self.lastError = nil }
             }
             if self.buffer.count >= Config.uploadBatchSize { await self.flush() }
         }
